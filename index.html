@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>25N</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      display: none;
+      width: 960px;
+      height: 540px;
+      border: 4px solid #555;
+      background: #aee9a3;
+      image-rendering: pixelated;
+    }
+    #startScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: url('background.jpg') no-repeat center center/cover;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+    #startText {
+      color: white;
+      font-size: 48px;
+      font-weight: bold;
+      background-color: rgba(0, 0, 0, 0.4);
+      padding: 20px 40px;
+      border-radius: 16px;
+    }
+    #endingScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: white;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 20;
+      font-family: "Arial", sans-serif;
+    }
+    #endingText {
+      text-align: center;
+      font-size: 36px;
+      line-height: 1.6;
+      white-space: pre-line;
+      opacity: 0;
+      animation: fadeIn 3s ease-in 1 forwards;
+    }
+
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+<div id="startScreen">
+  <div id="startText">Start Game</div>
+</div>
+<div id="endingScreen">
+  <div id="endingText">
+    25N in 25N<br>在2️⃣5️⃣年❤️吾奈
+  </div>
+</div>
+<canvas id="gameCanvas" width="960" height="540"></canvas>
+<audio id="bgm" src="music.MP3" loop></audio>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const bgm = document.getElementById("bgm");
+const endingScreen = document.getElementById("endingScreen");
+
+let gameStarted = false;
+
+const keys = {};
+const gravity = 0.5;
+const worldWidth = 3000;
+
+const player = {
+  x: 50,
+  y: 300,
+  width: 80,
+  height: 80,
+  dy: 0,
+  dx: 0,
+  onGround: false,
+  frameIndex: 0,
+  frameTick: 0,
+  frameSpeed: 10,
+  frames: [],
+  collected: 0,
+  facingLeft: false
+};
+
+for (let i = 0; i <= 6; i++) {
+  const img = new Image();
+  img.src = `frame_${i}.png`;
+  player.frames.push(img);
+}
+
+const flowerImage = new Image();
+flowerImage.src = 'flower.png';
+const grassImage = new Image();
+grassImage.src = 'grass.png';
+const treeImage = new Image();
+treeImage.src = 'tree.png';
+
+const platforms = [
+  { x: 0, y: canvas.height - 60, width: worldWidth, height: 60 },
+  { x: 300, y: canvas.height - 180, width: 120, height: 10 },
+  { x: 320, y: canvas.height - 300, width: 80, height: 10 },
+  { x: 500, y: canvas.height - 360, width: 100, height: 10 },
+  { x: 700, y: canvas.height - 440, width: 80, height: 10 },
+  { x: 900, y: canvas.height - 360, width: 120, height: 10 },
+  { x: 1100, y: canvas.height - 300, width: 80, height: 10 },
+  { x: 1300, y: canvas.height - 220, width: 100, height: 10 },
+  { x: 1500, y: canvas.height - 140, width: 100, height: 10 },
+  { x: 1700, y: canvas.height - 200, width: 80, height: 10 },
+  { x: 1900, y: canvas.height - 280, width: 80, height: 10 },
+  { x: 2100, y: canvas.height - 360, width: 80, height: 10 },
+  { x: 2300, y: canvas.height - 440, width: 80, height: 10 },
+  { x: 2500, y: canvas.height - 500, width: 80, height: 10 }
+];
+
+const decorations = [];
+const decorationsReady = () => flowerImage.complete && grassImage.complete && treeImage.complete;
+
+for (let i = 0; i < 20; i++) {
+  const types = ['flower', 'grass'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const platform = platforms[Math.floor(Math.random() * platforms.length)];
+  const x = platform.x + Math.random() * (platform.width - 80);
+  if (type === 'flower') {
+    decorations.push({ type: 'flower', x });
+    decorations.push({ type: 'flower', x: x + 25 });
+  } else if (type === 'grass') {
+    decorations.push({ type: 'grass', x });
+    decorations.push({ type: 'grass', x: x + 20 });
+  }
+}
+for (let i = 0; i < 20; i++) {
+  const x = platforms[0].x + Math.random() * (platforms[0].width - 80);
+  decorations.push({ type: 'tree', x });
+}
+
+const hearts = [
+  { x: 360, y: canvas.height - 220, collected: false },
+  { x: 520, y: canvas.height - 400, collected: false },
+  { x: 920, y: canvas.height - 400, collected: false },
+  { x: 1510, y: canvas.height - 180, collected: false },
+  { x: 2660, y: canvas.height - 510, collected: false }
+];
+
+let cameraX = 0;
+
+function drawPlatform(p) {
+  ctx.fillStyle = "#7a4f27";
+  ctx.fillRect(p.x - cameraX, p.y, p.width, p.height);
+}
+
+function groundY(x, type) {
+  if (type === 'tree') return platforms[0].y;
+  let maxY = canvas.height;
+  platforms.forEach(p => {
+    if (x >= p.x && x <= p.x + p.width) {
+      maxY = Math.min(maxY, p.y);
+    }
+  });
+  return maxY;
+}
+
+function drawDecor(d) {
+  const y = groundY(d.x, d.type);
+  const scale = d.type === 'tree' ? 0.4 : 0.3;
+  const img = d.type === 'tree' ? treeImage : d.type === 'flower' ? flowerImage : grassImage;
+  if (img.complete) {
+    ctx.drawImage(img, d.x - cameraX, y - img.height * scale, img.width * scale, img.height * scale);
+  }
+}
+
+function drawHeart(h) {
+  if (!h.collected) {
+    ctx.font = "32px Arial";
+    ctx.fillText("❤️", h.x - cameraX, h.y);
+  }
+}
+
+function updatePlayer() {
+  player.dy += gravity;
+  player.onGround = false;
+
+  if (keys["ArrowLeft"]) {
+    player.dx = -4;
+    player.facingLeft = true;
+  } else if (keys["ArrowRight"]) {
+    player.dx = 4;
+    player.facingLeft = false;
+  } else {
+    player.dx = 0;
+  }
+
+  player.x += player.dx;
+  player.y += player.dy;
+
+  platforms.forEach(p => {
+    if (player.x < p.x + p.width &&
+        player.x + player.width > p.x &&
+        player.y < p.y + p.height &&
+        player.y + player.height > p.y) {
+      if (player.dy > 0 && player.y + player.height <= p.y + player.dy) {
+        player.y = p.y - player.height;
+        player.dy = 0;
+        player.onGround = true;
+      }
+    }
+  });
+
+  if ((keys[" "] || keys["Space"] || keys["ArrowUp"]) && player.onGround) {
+    player.dy = -12;
+  }
+
+  hearts.forEach(h => {
+    if (!h.collected &&
+        player.x < h.x + 20 && player.x + player.width > h.x - 20 &&
+        player.y < h.y + 20 && player.y + player.height > h.y - 20) {
+      h.collected = true;
+      player.collected++;
+    }
+  });
+
+  if (player.collected === 5) {
+    canvas.style.display = "none";
+    endingScreen.style.display = "flex";
+  }
+
+  player.frameTick++;
+  if (player.frameTick >= player.frameSpeed) {
+    player.frameIndex = (player.frameIndex + 1) % player.frames.length;
+    player.frameTick = 0;
+  }
+
+  cameraX = player.x - canvas.width / 2 + player.width / 2;
+  if (cameraX < 0) cameraX = 0;
+  if (cameraX > worldWidth - canvas.width) cameraX = worldWidth - canvas.width;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  platforms.forEach(drawPlatform);
+  if (decorationsReady()) decorations.forEach(drawDecor);
+  hearts.forEach(drawHeart);
+
+  const frame = player.frames[player.frameIndex];
+  if (frame.complete) {
+    ctx.save();
+    if (player.facingLeft) {
+      ctx.translate(player.x - cameraX + player.width / 2, player.y + player.height / 2);
+      ctx.scale(-1, 1);
+      ctx.drawImage(frame, -player.width / 2, -player.height / 2, player.width, player.height);
+    } else {
+      ctx.drawImage(frame, player.x - cameraX, player.y, player.width, player.height);
+    }
+    ctx.restore();
+  }
+}
+
+function gameLoop() {
+  updatePlayer();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+document.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if (!gameStarted) {
+    document.getElementById("startScreen").style.display = "none";
+    canvas.style.display = "block";
+    gameStarted = true;
+    bgm.play();
+    gameLoop();
+  }
+});
+
+document.addEventListener("keyup", e => keys[e.key] = false);
+</script>
+</body>
+</html>
